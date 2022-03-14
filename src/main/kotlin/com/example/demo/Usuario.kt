@@ -6,11 +6,9 @@ import javax.persistence.GeneratedValue
 import javax.persistence.Id
 
 @Entity
-data class Usuario(var nombre: String, var pass: String) {
-    @Id
-    @GeneratedValue
-    var id = 0
+data class Usuario(@Id var nombre: String, var pass: String) {
     var claveCifrado = generarClave()
+
     override fun toString(): String {
         val gson = Gson()
         return gson.toJson(this)
@@ -27,11 +25,7 @@ data class Usuario(var nombre: String, var pass: String) {
     }
 }
 @Entity
-data class Admin(var nombre: String, var pass: String) {
-    @Id
-    @GeneratedValue
-    var id = 0
-
+data class Admin(@Id var nombre: String, var pass: String) {
     override fun toString(): String {
         val gson = Gson()
         return gson.toJson(this)

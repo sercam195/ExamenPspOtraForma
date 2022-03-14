@@ -2,10 +2,7 @@ package com.example.demo
 
 import com.google.gson.Gson
 
-class List {
-    companion object{
-        var list= mutableListOf<Any>()
-    }
+data class List(var list: MutableList<Any>) {
     override fun toString(): String {
         val gson= Gson()
         return gson.toJson(this)

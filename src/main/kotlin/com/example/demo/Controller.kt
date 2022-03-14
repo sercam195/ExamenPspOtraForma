@@ -1,13 +1,15 @@
 package com.example.demo
 
-import net.minidev.json.JSONObject
-import org.springframework.web.bind.annotation.*
+import org.springframework.data.repository.findByIdOrNull
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.RequestBody
+import org.springframework.web.bind.annotation.RestController
+import java.security.MessageDigest
 import java.util.*
+import javax.crypto.BadPaddingException
 import javax.crypto.Cipher
 import javax.crypto.spec.SecretKeySpec
-
-import java.security.MessageDigest
-import javax.crypto.BadPaddingException
 
 @RestController
 class Controller(
@@ -18,15 +20,12 @@ class Controller(
 
     @PostMapping("crearUsuario")
     fun crearUsuario(@RequestBody usuario: Usuario): Any {
-        vaciarLista()
-        usuariosRepository.findAll().forEach {
-            if (it.nombre == usuario.nombre) {
-                if (it.pass == usuario.pass) {
-                    return it.claveCifrado
-                } else {
-                    return Error(1, "Pass invalida")
-                }
+        val user = usuariosRepository.findByIdOrNull(usuario.nombre)
+        user?.let {
+            if (comprobarContrasenaUser(it,usuario)) {
+                return it.claveCifrado
             }
+            return Error(1, "Pass incorrecta")
         }
         usuariosRepository.save(usuario)
         return usuario.claveCifrado
@@ -35,76 +34,95 @@ class Controller(
 
     @PostMapping("crearMensaje")
     fun crearMensaje(@RequestBody mensaje: Mensaje): Any {
-        vaciarLista()
-        usuariosRepository.findAll().forEach {
-            if (it.nombre == mensaje.usuarioId) {
-                mensajesRepository.save(mensaje)
-                return "Success"
+        usuariosRepository.findByIdOrNull(mensaje.usuarioId)?.let {
+            var idRepetido = mensajesRepository.findByIdOrNull(mensaje.id)
+            var retorno = "Success"
+            while (idRepetido != null){
+                mensaje.id++
+                idRepetido = mensajesRepository.findByIdOrNull(mensaje.id)
+                retorno = "El id del mensaje esta repetido, se le ha asignado el id:"+mensaje.id
             }
+            mensajesRepository.save(mensaje)
+            return retorno
         }
         return Error(2, "Usuario inexistente")
     }
 
     @GetMapping("descargarMensajes")
-    fun descargarMensajes(): List.Companion {
-        vaciarLista()
+    fun descargarMensajes(): Any {
+        val objetoList = List(mutableListOf())
         mensajesRepository.findAll().forEach {
-            List.list.add(it)
+            objetoList.list.add(it)
         }
-        return List
+        return objetoList
     }
 
     @GetMapping("descargarMensajesFiltrados")
     fun descargarMensajesFiltrados(@RequestBody text: String): Any {
-        vaciarLista()
+        val objetoList = List(mutableListOf())
         mensajesRepository.findAll().forEach {
-            if (it.texto.contains(text, ignoreCase = true)) {
-                List.list.add(it)
+            if (it.texto.contains(text)) {
+                objetoList.list.add(it)
             }
         }
-        return listOf(List)
+        return objetoList
     }
 
     @GetMapping("obtenerMensajesYLlaves")
     fun obtenerMensajesYLlaves(@RequestBody admin: Admin): Any {
-        vaciarLista()
-        var clave : String
-        adminsRepository.findAll().forEach { admin1 ->
-            if (admin1.nombre == admin.nombre) {
-                if (admin1.pass == admin.pass) {
-                    mensajesRepository.findAll().forEach { mensaje ->
-                        clave = usuariosRepository.getById(saberUsuario(mensaje.usuarioId)).claveCifrado
-                        Lista.lista.add(MensajeClave(mensaje, clave))
-                    }
-                    return listOf(Lista)
-                }
-            }
-        }
-        return listOf(Error(3, "Pass de administrador incorrecta"))
+        return if (iniciarSesionAdmin(admin) == true){
+            listaMensajeLlave()
+        } else iniciarSesionAdmin(admin)
     }
 
     @GetMapping("obtenerMensajesDescifrados")
     fun obtenerMensajesDescifrados(@RequestBody admin: Admin): Any {
-        vaciarLista()
-        adminsRepository.findAll().forEach { admin1 ->
-            if (admin1.nombre == admin.nombre) {
-                if (admin1.pass == admin.pass) {
-                    mensajesRepository.findAll().forEach {
-                        val mensaje = it
-                        var textoDescifrado: String = try {
-                            descifrar(it.texto, usuariosRepository.getById(saberUsuario(it.usuarioId)).claveCifrado)
-                        } catch (e: Exception) {
-                            "Texto indescifrable"
-                        }
-                        mensaje.texto = textoDescifrado
-                        List.list.add(mensaje)
-                    }
-                    return listOf(List)
+        return if (iniciarSesionAdmin(admin) == true){
+            listaTextoDescifrado()
+        } else iniciarSesionAdmin(admin)
+    }
 
-                }
+    fun comprobarContrasenaUser(usuarioBaseDeDatos: Usuario, usuarioIntroducido: Usuario): Boolean {
+        return usuarioBaseDeDatos.pass == usuarioIntroducido.pass
+    }
+
+    fun comprobarContrasenaAdmin(adminBaseDeDatos: Admin, adminIntroducido: Admin): Boolean {
+        return adminBaseDeDatos.pass == adminIntroducido.pass
+    }
+
+    fun listaTextoDescifrado(): List {
+        val objetoList = List(mutableListOf())
+        mensajesRepository.findAll().forEach {
+            val mensaje = it.copy()
+            try {
+                mensaje.texto = descifrar(it.texto, usuariosRepository.getById(it.usuarioId).claveCifrado)
+            } catch (e: Exception) {
+                mensaje.texto = "Texto indescifrable"
             }
+            objetoList.list.add(mensaje)
         }
-        return listOf(Error(3, "Pass de administrador incorrecta"))
+        return objetoList
+    }
+
+    fun listaMensajeLlave(): Lista {
+        val objetoLista = Lista(mutableListOf())
+        var clave: String
+        mensajesRepository.findAll().forEach { mensaje ->
+            clave = usuariosRepository.getById(mensaje.usuarioId).claveCifrado
+            objetoLista.lista.add(MensajeClave(mensaje, clave))
+        }
+        return objetoLista
+    }
+
+    fun iniciarSesionAdmin(admin : Admin) : Any{
+        val adminBaseDeDatos = adminsRepository.findByIdOrNull(admin.nombre)
+        adminBaseDeDatos?.let {
+            if (comprobarContrasenaAdmin(adminBaseDeDatos, admin)) {
+                return true
+            }
+            return Error(3, "Pass de administrador incorrecta")
+        }
+        return Error(3, "Nombre de administrador incorrecto")
     }
 
     @Throws(BadPaddingException::class)
@@ -126,20 +144,5 @@ class Controller(
         llaveUtf8 = sha.digest(llaveUtf8)
         llaveUtf8 = llaveUtf8.copyOf(16)
         return SecretKeySpec(llaveUtf8, "AES")
-    }
-
-
-    fun vaciarLista() {
-        Lista.lista.clear()
-        List.list.clear()
-    }
-
-
-    fun saberUsuario(nombre: String): Int {
-        usuariosRepository.findAll().forEach {
-            if (it.nombre == nombre)
-                return it.id
-        }
-        return 0
     }
 }
